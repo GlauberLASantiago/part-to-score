@@ -45,6 +45,7 @@ const instruments=[
  {id:'flute',name:'Flauta transversal',detail:'Dó · melodia na oitava aguda',upSemi:0,upDia:0,clef:'G',line:2,oct:1,midi:74,abbr:'Fl.'},
  {id:'clarinet',name:'Clarinete em Si♭',detail:'Escrita uma 2ª maior acima',upSemi:2,upDia:1,clef:'G',line:2,oct:0,midi:72,abbr:'Cl. Si♭'},
  {id:'trumpet',name:'Trompete em Si♭',detail:'Escrita uma 2ª maior acima',upSemi:2,upDia:1,clef:'G',line:2,oct:0,midi:57,abbr:'Tpt. Si♭'},
+ {id:'sopranosax',name:'Saxofone soprano em Si♭',detail:'Escrita uma 2ª maior acima',upSemi:2,upDia:1,clef:'G',line:2,oct:0,midi:65,abbr:'Sax. S.'},
  {id:'altosax',name:'Saxofone alto em Mi♭',detail:'Escrita uma 6ª maior acima',upSemi:9,upDia:5,clef:'G',line:2,oct:0,midi:66,abbr:'Sax. A.'},
  {id:'tenorsax',name:'Saxofone tenor em Si♭',detail:'Escrita uma 9ª maior acima',upSemi:14,upDia:8,clef:'G',line:2,oct:-1,midi:67,abbr:'Sax. T.'},
  {id:'trombone',name:'Trombone',detail:'Não transpositor',upSemi:0,upDia:0,clef:'F',line:4,oct:-1,midi:58,abbr:'Trb.'},
@@ -61,11 +62,11 @@ const instruments=[
  {id:'tuba',name:'Tuba em Dó',detail:'Não transpositora · clave de Fá',upSemi:0,upDia:0,clef:'F',line:4,oct:-2,midi:59,abbr:'Tb.',optional:true},
  {id:'doublebass',name:'Contrabaixo acústico',detail:'Som uma oitava abaixo da escrita',upSemi:-12,upDia:-7,clef:'F',line:4,oct:-1,midi:44,abbr:'Cb.',optional:true}
 ];
-const orchestralOrder=['recorder','piccolo','flute','oboe','clarinet','bassclar','bassoon','altosax','tenorsax','barisax','horn','trumpet','trombone','tuba','violin','viola','cello','doublebass'];
+const orchestralOrder=['recorder','piccolo','flute','oboe','clarinet','bassclar','bassoon','sopranosax','altosax','tenorsax','barisax','horn','trumpet','trombone','tuba','violin','viola','cello','doublebass'];
 instruments.sort((a,b)=>orchestralOrder.indexOf(a.id)-orchestralOrder.indexOf(b.id));
 // Extensões aproximadas e conservadoras em altura sonora (MIDI, Dó4 = 60).
 // Podem variar conforme técnica e modelo do instrumento.
-const soundRanges={recorder:[72,96],piccolo:[74,108],flute:[60,96],oboe:[58,91],clarinet:[50,94],bassclar:[34,82],bassoon:[34,75],altosax:[49,85],tenorsax:[44,80],barisax:[36,77],horn:[41,82],trumpet:[54,82],trombone:[40,77],tuba:[28,65],violin:[55,100],viola:[48,88],cello:[36,76],doublebass:[28,67]};
+const soundRanges={recorder:[72,96],piccolo:[74,108],flute:[60,96],oboe:[58,91],clarinet:[50,94],bassclar:[34,82],bassoon:[34,75],sopranosax:[52,88],altosax:[49,85],tenorsax:[44,80],barisax:[36,77],horn:[41,82],trumpet:[54,82],trombone:[40,77],tuba:[28,65],violin:[55,100],viola:[48,88],cello:[36,76],doublebass:[28,67]};
 const LETTERS=['C','D','E','F','G','A','B'], NAT=[0,2,4,5,7,9,11];
 const FIFTH_TONIC={"-7":"B","-6":"G","-5":"D","-4":"A","-3":"E","-2":"B","-1":"F","0":"C","1":"G","2":"D","3":"A","4":"E","5":"B","6":"F","7":"C"};
 const BASE_MAJOR_FIFTHS={C:0,D:2,E:4,F:-1,G:1,A:3,B:5};
@@ -81,7 +82,8 @@ function slug(s){return (s||'partitura').normalize('NFD').replace(/[\u0300-\u036
 function baseName(n){return n.replace(/\.(musicxml|xml|mxl)$/i,'')}
 function setStatus(text,kind='warning'){const s=el('status');s.textContent=text;s.className='status visible '+kind}
 function clearStatus(){el('status').className='status';el('status').textContent=''}
-function addRows(){const host=el('instrumentRows');for(const i of instruments){let r=document.createElement('div');r.className='instr';r.innerHTML=`<label><input type="checkbox" data-inst="${i.id}" ${i.optional?'':'checked'}><span class="instrumentname"><span>${i.name}</span><div class="inst-detail">${i.detail}</div></span></label><div class="colhead">${i.clef==='C'?'Dó 3ª':i.clef==='F'?'Fá':'Sol'}</div><select data-oct="${i.id}" aria-label="Oitava para ${i.name}">${[-2,-1,0,1,2].map(o=>`<option value="${o}" ${i.oct===o?'selected':''}>${o>0?'+':''}${o}</option>`).join('')}</select><select data-count="${i.id}" aria-label="Número de pautas para ${i.name}">${[1,2,3,4].map(n=>`<option value="${n}">${n}</option>`).join('')}</select><select data-voice="${i.id}" aria-label="Voz inicial para ${i.name}">${[1,2,3,4,5,6,7,8].map(n=>`<option value="${n}">${n}</option>`).join('')}</select>`;host.appendChild(r)}}
+const harmonyDefaults={flute:[2,1],clarinet:[3,1],altosax:[2,1],tenorsax:[1,3],trumpet:[2,1],trombone:[1,3],viola:[1,2]};
+function addRows(){const host=el('instrumentRows');for(const i of instruments){let r=document.createElement('div');r.className='instr';const [defaultCount,defaultVoice]=harmonyDefaults[i.id]||[1,1];r.innerHTML=`<label><input type="checkbox" data-inst="${i.id}" ${i.optional?'':'checked'}><span class="instrumentname"><span>${i.name}</span><div class="inst-detail">${i.detail}</div></span></label><div class="colhead">${i.clef==='C'?'Dó 3ª':i.clef==='F'?'Fá':'Sol'}</div><select data-oct="${i.id}" aria-label="Oitava para ${i.name}">${[-2,-1,0,1,2].map(o=>`<option value="${o}" ${i.oct===o?'selected':''}>${o>0?'+':''}${o}</option>`).join('')}</select><select data-count="${i.id}" aria-label="Número de pautas para ${i.name}">${[1,2,3,4].map(n=>`<option value="${n}" ${n===defaultCount?'selected':''}>${n}</option>`).join('')}</select><select data-voice="${i.id}" aria-label="Voz inicial para ${i.name}">${[1,2,3,4,5,6,7,8].map(n=>`<option value="${n}" ${n===defaultVoice?'selected':''}>${n}</option>`).join('')}</select>`;host.appendChild(r)}}
 addRows();
 function syncHarmonyControls(){const harmonizing=el('generationMode').value==='harm';for(const sel of document.querySelectorAll('[data-count],[data-voice]'))sel.disabled=!harmonizing;}
 el('generationMode').addEventListener('change',syncHarmonyControls);syncHarmonyControls();
@@ -195,9 +197,9 @@ function harmonizePart(sourcePart,targetPart,voice,inst,warningSet){
    if(child.localName==='harmony'){active=harmonyDefinition(child);continue}
    if(child.localName!=='note')continue;
    const dst=destNotes[ni++],pitch=one(child,'pitch');if(!pitch)continue;
-   if(one(child,'chord')){if(prevTone)setPitchDirect(dst,prevTone);continue}
+   if(one(child,'chord')){if(active&&prevTone)setPitchDirect(dst,prevTone);continue}
    if(voice===1)continue;
-   if(!active)throw Error('Falta uma cifra antes de uma nota no compasso '+(m+1)+'. Harmonização interrompida para evitar notas arbitrárias.');
+   if(!active){prevTone=null;warningSet.add('Sem cifra no início: as notas anteriores à primeira cifra foram mantidas iguais à melodia nas vozes geradas.');continue;}
    const originalPitch={step:txt(pitch,'step'),alter:number(pitch,'alter'),oct:number(pitch,'octave',4)};
    const concertMidi=(originalPitch.oct+1)*12+NAT[LETTERS.indexOf(originalPitch.step)]+originalPitch.alter+sourceMeta.tr.semi;
    const lower=lowerChordTone(active,concertMidi,voice);
