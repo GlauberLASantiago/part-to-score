@@ -35,7 +35,7 @@ a{color:#3D5A80}a:hover{color:#293241}.credits{color:#293241;font-size:13px;marg
    </div><div class="hint">Se a parte original for removida, as cifras serão preservadas na primeira parte gerada quando o modo “Apenas na parte original” estiver selecionado.</div>
   </section>
   <section class="panel"><h2 style="margin-bottom:18px">Critérios musicais</h2><div class="rules"><div class="rule"><div class="ico">♭</div><div><strong>Transposição correta</strong><p>Converte a altura escrita de origem em altura real e depois calcula a nota escrita do instrumento de destino.</p></div></div><div class="rule"><div class="ico">𝄞</div><div><strong>Claves e armaduras</strong><p>Atualiza a clave e cada mudança de armadura, respeitando o instrumento e as tonalidades enarmônicas.</p></div></div><div class="rule"><div class="ico">♩</div><div><strong>Dois modos de trabalho</strong><p>Duplique a melodia ou distribua linhas inferiores conforme as cifras e os números de voz atribuídos a cada instrumento.</p></div></div></div></section>
-  <section class="panel action-panel"><h2>Gerar sua grade orquestral</h2><p class="muted" style="margin:8px 0 18px">O arquivo original não é alterado. Será criado um novo .musicxml para abrir no MuseScore.</p><button id="generate" class="button-primary" disabled>Gerar e baixar MusicXML</button><div class="note">Sem envio de arquivos para servidores.</div><div id="status" class="status" role="status" aria-live="polite"></div></section>
+  <section class="panel action-panel"><h2>Gerar sua grade orquestral</h2><p class="muted" style="margin:8px 0 18px">O arquivo original não é alterado. O MusicXML terá paginação automática, escala compacta A4 e chaves agrupando pautas do mesmo instrumento.</p><button id="generate" class="button-primary" disabled>Gerar e baixar MusicXML</button><div class="note">Sem envio de arquivos para servidores.</div><div id="status" class="status" role="status" aria-live="polite"></div></section>
  </aside></main>
  <footer class="footer"><div class="credits">Desenvolvido pelo professor <strong>Glauber Santiago</strong> — DAC/UFSCar<div><a href="https://aprenda-musica-comigo.web.app/" target="_blank" rel="noopener">aprenda-musica-comigo.web.app</a> • <a href="https://servidores.ufscar.br/glauber/" target="_blank" rel="noopener">servidores.ufscar.br/glauber/</a> • <a href="https://glauberia.web.app/" target="_blank" rel="noopener">https://glauberia.web.app/</a></div></div>Versão experimental para partituras <b>score-partwise com uma parte e um pentagrama</b>. Recomendável conferir o MusicXML resultante no MuseScore, em especial repetições complexas, cifras pouco usuais, ornamentação e tessitura. Não substitui revisão musical.</footer>
 </div>
@@ -139,6 +139,41 @@ function clearSourceLayout(doc){
    }
  }
 }
+// Escala editorial compacta para grades com muitas partes, sem impor quebras de sistema.
+// Medidas em tenths, de acordo com a especificação MusicXML.
+function setCompactScoreLayout(doc,staffCount){
+ const root=doc.documentElement;
+ const dense=staffCount>=17, many=staffCount>=11;
+ const mm=dense?5.25:many?5.8:6.6; // escala para pautas densas
+ const tenths=40, factor=tenths/mm;
+ const defaults=own(doc,'defaults'), scaling=own(doc,'scaling');
+ scaling.append(own(doc,'millimeters',mm),own(doc,'tenths',tenths));defaults.append(scaling);
+ const page=own(doc,'page-layout');
+ page.append(own(doc,'page-height',Math.round(297*factor)),own(doc,'page-width',Math.round(210*factor)));
+ for(const type of ['both']){
+   const margins=own(doc,'page-margins');margins.setAttribute('type',type);
+   const margin=Math.round((dense?9:many?10:12)*factor);
+   margins.append(own(doc,'left-margin',margin),own(doc,'right-margin',margin),
+                  own(doc,'top-margin',margin),own(doc,'bottom-margin',margin));page.append(margins);
+ }
+ defaults.append(page);
+ // Distâncias sugeridas; o MuseScore continua responsável pela distribuição automática.
+ const system=own(doc,'system-layout'),sysm=own(doc,'system-margins');
+ sysm.append(own(doc,'left-margin',0),own(doc,'right-margin',0));system.append(sysm);
+ system.append(own(doc,'system-distance',many?95:115));defaults.append(system);
+ const staff=own(doc,'staff-layout');staff.append(own(doc,'staff-distance',dense?51:many?58:65));defaults.append(staff);
+ // MusicXML: defaults deve preceder part-list; não fixar compassos por sistema.
+ const partList=one(root,'part-list');root.insertBefore(defaults,partList);
+}
+function makeGroupMarker(doc,number,type,label){
+ const g=own(doc,'part-group');g.setAttribute('number',String(number));
+ g.append(own(doc,'group-type',type));
+ if(type==='start'){
+   g.append(own(doc,'group-name',label),own(doc,'group-abbreviation',label),
+            own(doc,'group-symbol','brace'),own(doc,'group-barline','yes'));
+ }
+ return g;
+}
 function insertFirstAttrs(measure,doc){let attrs=kids(measure,'attributes')[0];if(attrs)return attrs;attrs=own(doc,'attributes');const pr=one(measure,'print');if(pr)pr.after(attrs);else measure.insertBefore(attrs,measure.firstChild);return attrs}
 function soundingMidiRange(){const pitches=[...kids(xmlDoc.documentElement,'part')[0].querySelectorAll('note > pitch')];const result=pitches.map(p=>{const step=txt(p,'step'),oct=number(p,'octave',4);return (oct+1)*12+NAT[LETTERS.indexOf(step)]+number(p,'alter')+sourceMeta.tr.semi});return result.length?[Math.min(...result),Math.max(...result)]:null}
 function chooseAutoOct(inst,sourceRange){if(!sourceRange)return {oct:inst.oct,valid:true};const [low,high]=soundRanges[inst.id]||[0,127];const candidates=[-3,-2,-1,0,1,2,3].map(o=>({oct:o,below:Math.max(0,low-(sourceRange[0]+12*o)),above:Math.max(0,(sourceRange[1]+12*o)-high)}));candidates.sort((a,b)=>(a.below+a.above)-(b.below+b.above)||Math.abs(a.oct-inst.oct)-Math.abs(b.oct-inst.oct)||Math.abs(a.oct)-Math.abs(b.oct));return {oct:candidates[0].oct,valid:candidates[0].below+candidates[0].above===0}}
@@ -212,7 +247,7 @@ function harmonizePart(sourcePart,targetPart,voice,inst,warningSet){
 }
 function generate(){clearStatus();if(!xmlDoc||!sourceMeta){setStatus('Carregue um arquivo MusicXML válido.','error');return}const harmonizing=el('generationMode').value==='harm';const selected=instruments.filter(i=>document.querySelector(`[data-inst="${i.id}"]`).checked).flatMap(i=>{const count=harmonizing?Number(document.querySelector(`[data-count="${i.id}"]`).value):1,start=harmonizing?Number(document.querySelector(`[data-voice="${i.id}"]`).value):1,oct=Number(document.querySelector(`[data-oct="${i.id}"]`).value);return Array.from({length:count},(_,idx)=>({...i,oct,voice:start+idx,staffNo:idx+1,count}));});if(!selected.length){setStatus('Selecione pelo menos um instrumento.','error');return}
  try{const warnings=[];if(harmonizing&&sourceMeta.har===0)throw Error('Para harmonizar, o MusicXML precisa conter cifras (<harmony>).');if(el('autoOct').checked){const range=soundingMidiRange();for(const i of selected){const choice=chooseAutoOct(i,range);i.oct=choice.oct;if(!choice.valid)warnings.push(i.name+': a melodia não cabe integralmente na extensão estimada, mesmo após mudança de oitava.');}}const d=xmlDoc.cloneNode(true),root=d.documentElement,partList=one(root,'part-list'),original=kids(root,'part')[0],origScorePart=kids(partList,'score-part')[0],copyLyrics=el('copyLyrics').checked,keepSource=true,chordMode=el('chords').value,srcTrans=sourceMeta.tr,sFifthOffset=fifthShift(srcTrans.semi,srcTrans.dia);
- const harmonyWarnings=new Set();selected.forEach((i,idx)=>{let partId='ORQ'+(idx+1);while([...partList.querySelectorAll('score-part')].some(e=>e.getAttribute('id')===partId))partId+='X';const part=original.cloneNode(true);stripIDs(part);part.setAttribute('id',partId);const semi=srcTrans.semi+i.upSemi+12*i.oct,initialDia=srcTrans.dia+i.upDia+7*i.oct,chordSemi=srcTrans.semi+i.upSemi,chordDia=srcTrans.dia+i.upDia,targetOffset=fifthShift(i.upSemi,i.upDia);let currentKey=0;
+ const harmonyWarnings=new Set();let groupNumber=1;selected.forEach((i,idx)=>{if(i.count>1&&i.staffNo===1)partList.append(makeGroupMarker(d,groupNumber,'start',i.name));let partId='ORQ'+(idx+1);while([...partList.querySelectorAll('score-part')].some(e=>e.getAttribute('id')===partId))partId+='X';const part=original.cloneNode(true);stripIDs(part);part.setAttribute('id',partId);const semi=srcTrans.semi+i.upSemi+12*i.oct,initialDia=srcTrans.dia+i.upDia+7*i.oct,chordSemi=srcTrans.semi+i.upSemi,chordDia=srcTrans.dia+i.upDia,targetOffset=fifthShift(i.upSemi,i.upDia);let currentKey=0;
  const measures=kids(part,'measure');measures.forEach((m,measureIndex)=>{let attrs=kids(m,'attributes');if(measureIndex===0&&attrs.length===0)attrs=[insertFirstAttrs(m,d)];for(const a of attrs){for(const k of kids(a,'key')){const val=txt(k,'fifths');if(val!==null)currentKey=Number(val);if(!Number.isInteger(currentKey))throw Error('Armadura de clave inválida.');const finalF=normalizedFifths(currentKey+sFifthOffset+targetOffset);upsert(k,'fifths',finalF)}if(measureIndex===0&&a===attrs[0]){prependClef(a,i);insertTranspose(a,i)}else{for(const c of kids(a,'clef'))c.remove();for(const t of kids(a,'transpose'))t.remove()}}
  // A transposição instrumental é declarada apenas no início da parte.
 
@@ -220,10 +255,10 @@ function generate(){clearStatus();if(!xmlDoc||!sourceMeta){setStatus('Carregue u
  for(const note of kids(m,'note')){updateNote(note,semi,dia);for(const stem of kids(note,'stem'))stem.remove();if(!copyLyrics)for(const ly of kids(note,'lyric'))ly.remove()}
  const showChords=chordMode==='all'||(chordMode==='first'&&idx===0)||(!keepSource&&chordMode==='master'&&idx===0);
  for(const h of kids(m,'harmony')){if(showChords)transposeHarmony(h,chordSemi,cdia);else h.remove()}
- });if(harmonizing)harmonizePart(original,part,i.voice,i,harmonyWarnings);root.append(part);const desc=instrumentPartDef(d,i,partId,idx+1);if(harmonizing){const title=i.name+' '+i.staffNo;one(desc,'part-name').textContent=title+' (voz '+i.voice+')';const ab=one(desc,'part-abbreviation');ab.textContent=i.abbr+' '+i.staffNo;const sinst=one(desc,'score-instrument');one(sinst,'instrument-name').textContent=title;}partList.append(desc)});
+ });if(harmonizing)harmonizePart(original,part,i.voice,i,harmonyWarnings);root.append(part);const desc=instrumentPartDef(d,i,partId,idx+1);if(harmonizing){const title=i.name+' '+i.staffNo;one(desc,'part-name').textContent=title+' (voz '+i.voice+')';const ab=one(desc,'part-abbreviation');ab.textContent=i.abbr+' '+i.staffNo;const sinst=one(desc,'score-instrument');one(sinst,'instrument-name').textContent=title;}partList.append(desc);if(i.count>1&&i.staffNo===i.count){partList.append(makeGroupMarker(d,groupNumber,'stop',i.name));groupNumber++;}});
  if(!keepSource){original.remove();if(origScorePart)origScorePart.remove()}
- warnings.push(...harmonyWarnings);clearSourceLayout(d);
- root.setAttribute('version','4.0');let contents='<?xml version="1.0" encoding="utf-8"?>\n'+new XMLSerializer().serializeToString(d).replace(/^<\?xml[^>]*\?>\s*/,'');const blob=new Blob([contents],{type:'application/vnd.recordare.musicxml+xml;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=slug(baseName(sourceFilename))+'_grade_orquestral.musicxml';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);setStatus('Grade criada com '+selected.length+' pautas'+(harmonizing?' harmonizadas':' instrumentais')+(keepSource?' + melodia original':'')+'.\nArquivo gerado: '+a.download+'\nHastes das partes geradas: orientação automática.\nPaginação: automática, sem quebras herdadas.\n'+(warnings.length?'Atenção à extensão instrumental:\n'+warnings.join('\n')+'\n':'')+'Abra no MuseScore para verificar escrita, playback e paginação.',warnings.length?'warning':'success')
+ warnings.push(...harmonyWarnings);clearSourceLayout(d);setCompactScoreLayout(d,selected.length+1);
+ root.setAttribute('version','4.0');let contents='<?xml version="1.0" encoding="utf-8"?>\n'+new XMLSerializer().serializeToString(d).replace(/^<\?xml[^>]*\?>\s*/,'');const blob=new Blob([contents],{type:'application/vnd.recordare.musicxml+xml;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=slug(baseName(sourceFilename))+'_grade_orquestral.musicxml';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);setStatus('Grade criada com '+selected.length+' pautas'+(harmonizing?' harmonizadas':' instrumentais')+(keepSource?' + melodia original':'')+'.\nArquivo gerado: '+a.download+'\nHastes das partes geradas: orientação automática.\nPaginação: automática, sem quebras herdadas; escala compacta A4.\nGrupos: chaves para instrumentos com múltiplas pautas.\n'+(warnings.length?'Atenção à extensão instrumental:\n'+warnings.join('\n')+'\n':'')+'Abra no MuseScore para verificar escrita, playback e paginação.',warnings.length?'warning':'success')
  }catch(e){setStatus('Não foi possível concluir: '+(e.message||String(e)),'error');console.error(e)}}
 el('generate').addEventListener('click',generate);
 </script>
