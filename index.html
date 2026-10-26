@@ -115,17 +115,24 @@ function fifthShift(semi,dia){const out=transposeLetter('C',0,4,semi,dia);return
 function normalizedFifths(f){while(f>7)f-=12;while(f< -7)f+=12;return f}
 function degreeReformat(dia,sourceF,targetF){if(!(String(sourceF) in FIFTH_TONIC)||!(String(targetF) in FIFTH_TONIC))return dia;const a=LETTERS.indexOf(FIFTH_TONIC[sourceF]),b=LETTERS.indexOf(FIFTH_TONIC[targetF]);let wanted=(b-a+7)%7,current=((dia%7)+7)%7,adjust=(wanted-current+7)%7;if(adjust>3)adjust-=7;return dia+adjust}
 function updateNote(note,semi,dia){const pitch=one(note,'pitch');if(!pitch)return;const step=txt(pitch,'step'),alter=number(pitch,'alter'),oct=number(pitch,'octave',4),newPitch=transposeLetter(step,alter,oct,semi,dia);if(Math.abs(newPitch.alter)>2)throw Error('A transposição exigiu um acidente de mais de dois semitons ('+step+oct+'). Confira armaduras enarmônicas e tente uma configuração alternativa.');upsert(pitch,'step',newPitch.step);let oldAlter=one(pitch,'alter');if(newPitch.alter!==0){if(oldAlter)oldAlter.textContent=String(newPitch.alter);else{const newA=own(note.ownerDocument,'alter',newPitch.alter);one(pitch,'step').after(newA)}}else if(oldAlter)oldAlter.remove();upsert(pitch,'octave',newPitch.oct);for(const acc of kids(note,'accidental'))acc.remove()}
-function transposeHarmony(h,semi,dia){for(const [field,stepTag,alterTag] of [['root','root-step','root-alter'],['bass','bass-step','bass-alter']]){const parent=one(h,field);if(!parent)continue;const step=txt(parent,stepTag);if(!step)continue;const result=transposeLetter(step,number(parent,alterTag),4,semi,dia);upsert(parent,stepTag,result.step);let old=one(parent,alterTag);if(result.alter!==0){if(old)old.textContent=String(result.alter);else one(parent,stepTag).after(own(h.ownerDocument,alterTag,result.alter))}else if(old)old.remove()}for(const f of kids(h,'frame'))f.remove()}
-// Compatibilidade com importadores MusicXML: alguns MuseScore omitem a raiz
-// quando <root-step> não possui o atributo "text" (e exibem apenas "/B").
-// Especificar a letra explicitamente preserva a raiz mesmo em inversões.
-function normalizeHarmonyRootDisplay(doc){
- for(const h of doc.querySelectorAll('harmony')){
-  const root=one(h,'root'),stepNode=root?one(root,'root-step'):null;
+function transposeHarmony(h,semi,dia){for(const [field,stepTag,alterTag] of [['root','root-step','root-alter'],['bass','bass-step','bass-alter']]){const parent=one(h,field);if(!parent)continue;const step=txt(parent,stepTag);if(!step)continue;const result=transposeLetter(step,number(parent,alterTag),4,semi,dia);upsert(parent,stepTag,result.step);let old=one(parent,alterTag);if(result.alter!==0){if(old)old.textContent=String(result.alter);else one(parent,stepTag).after(own(h.ownerDocument,alterTag,result.alter))}else if(old)old.remove()}for(const f of kids(h,'frame'))f.remove();normalizeHarmonyDisplay(h)}
+// Mantém a apresentação sincronizada com as alturas MusicXML, inclusive no baixo.
+// Atributos text vazios podem ocultar letras; textos herdados podem ficar sem transposição.
+function normalizeHarmonyDisplay(h){
+ for(const [field,stepTag,alterTag] of [['root','root-step','root-alter'],['bass','bass-step','bass-alter']]){
+  const parent=one(h,field),stepNode=parent?one(parent,stepTag):null;
   if(!stepNode)continue;
   const step=stepNode.textContent.trim().toUpperCase();
-  if(LETTERS.includes(step))stepNode.setAttribute('text',step);
+  if(!LETTERS.includes(step))continue;
+  stepNode.textContent=step;
+  stepNode.setAttribute('text',step);
+  // O acidente deve ser obtido do valor numérico atualizado, não de um texto antigo.
+  const alterNode=one(parent,alterTag);
+  if(alterNode)alterNode.removeAttribute('text');
  }
+}
+function normalizeHarmonyRootDisplay(doc){
+ for(const h of doc.querySelectorAll('harmony'))normalizeHarmonyDisplay(h);
 }
 function makeClef(doc,i){const c=own(doc,'clef');c.append(own(doc,'sign',i.clef),own(doc,'line',i.line));return c}
 function prependClef(attr,i){for(const c of kids(attr,'clef'))c.remove();const c=makeClef(attr.ownerDocument,i),st=one(attr,'staves'),tm=one(attr,'time'),ky=one(attr,'key'),dv=one(attr,'divisions');const after=st||tm||ky||dv;if(after)after.after(c);else{const tail=kids(attr,'staff-details')[0]||kids(attr,'transpose')[0]||kids(attr,'measure-style')[0];if(tail)attr.insertBefore(c,tail);else attr.append(c)}}
