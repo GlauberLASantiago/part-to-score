@@ -253,7 +253,7 @@ function harmonizePart(sourcePart,targetPart,voice,inst,warningSet){
   const originalNotes=kids(srcMeasures[m],'note'),destNotes=kids(dstMeasures[m],'note'),sourceEvents=[...srcMeasures[m].children];
   let ni=0,prevTone=null;
   for(const child of sourceEvents){
-   if(child.localName==='harmony'){active=harmonyDefinition(child);continue}
+   if(child.localName==='harmony'){active=harmonyDefinition(child);continue} 
    if(child.localName!=='note')continue;
    const dst=destNotes[ni++],pitch=one(child,'pitch');if(!pitch)continue;
    if(one(child,'chord')){if(active&&prevTone)setPitchDirect(dst,prevTone);continue}
