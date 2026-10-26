@@ -116,6 +116,17 @@ function normalizedFifths(f){while(f>7)f-=12;while(f< -7)f+=12;return f}
 function degreeReformat(dia,sourceF,targetF){if(!(String(sourceF) in FIFTH_TONIC)||!(String(targetF) in FIFTH_TONIC))return dia;const a=LETTERS.indexOf(FIFTH_TONIC[sourceF]),b=LETTERS.indexOf(FIFTH_TONIC[targetF]);let wanted=(b-a+7)%7,current=((dia%7)+7)%7,adjust=(wanted-current+7)%7;if(adjust>3)adjust-=7;return dia+adjust}
 function updateNote(note,semi,dia){const pitch=one(note,'pitch');if(!pitch)return;const step=txt(pitch,'step'),alter=number(pitch,'alter'),oct=number(pitch,'octave',4),newPitch=transposeLetter(step,alter,oct,semi,dia);if(Math.abs(newPitch.alter)>2)throw Error('A transposição exigiu um acidente de mais de dois semitons ('+step+oct+'). Confira armaduras enarmônicas e tente uma configuração alternativa.');upsert(pitch,'step',newPitch.step);let oldAlter=one(pitch,'alter');if(newPitch.alter!==0){if(oldAlter)oldAlter.textContent=String(newPitch.alter);else{const newA=own(note.ownerDocument,'alter',newPitch.alter);one(pitch,'step').after(newA)}}else if(oldAlter)oldAlter.remove();upsert(pitch,'octave',newPitch.oct);for(const acc of kids(note,'accidental'))acc.remove()}
 function transposeHarmony(h,semi,dia){for(const [field,stepTag,alterTag] of [['root','root-step','root-alter'],['bass','bass-step','bass-alter']]){const parent=one(h,field);if(!parent)continue;const step=txt(parent,stepTag);if(!step)continue;const result=transposeLetter(step,number(parent,alterTag),4,semi,dia);upsert(parent,stepTag,result.step);let old=one(parent,alterTag);if(result.alter!==0){if(old)old.textContent=String(result.alter);else one(parent,stepTag).after(own(h.ownerDocument,alterTag,result.alter))}else if(old)old.remove()}for(const f of kids(h,'frame'))f.remove()}
+// Compatibilidade com importadores MusicXML: alguns MuseScore omitem a raiz
+// quando <root-step> não possui o atributo "text" (e exibem apenas "/B").
+// Especificar a letra explicitamente preserva a raiz mesmo em inversões.
+function normalizeHarmonyRootDisplay(doc){
+ for(const h of doc.querySelectorAll('harmony')){
+  const root=one(h,'root'),stepNode=root?one(root,'root-step'):null;
+  if(!stepNode)continue;
+  const step=stepNode.textContent.trim().toUpperCase();
+  if(LETTERS.includes(step))stepNode.setAttribute('text',step);
+ }
+}
 function makeClef(doc,i){const c=own(doc,'clef');c.append(own(doc,'sign',i.clef),own(doc,'line',i.line));return c}
 function prependClef(attr,i){for(const c of kids(attr,'clef'))c.remove();const c=makeClef(attr.ownerDocument,i),st=one(attr,'staves'),tm=one(attr,'time'),ky=one(attr,'key'),dv=one(attr,'divisions');const after=st||tm||ky||dv;if(after)after.after(c);else{const tail=kids(attr,'staff-details')[0]||kids(attr,'transpose')[0]||kids(attr,'measure-style')[0];if(tail)attr.insertBefore(c,tail);else attr.append(c)}}
 function buildTranspose(doc,i){if(i.upSemi===0&&i.upDia===0)return null;const t=own(doc,'transpose');const semi=-i.upSemi,dia=-i.upDia;const oct=Math.floor(semi/12),ch=semi-oct*12,rawDia=dia-7*oct;
@@ -263,7 +274,7 @@ function generate(){clearStatus();if(!xmlDoc||!sourceMeta){setStatus('Carregue u
  for(const h of kids(m,'harmony')){if(showChords)transposeHarmony(h,chordSemi,cdia);else h.remove()}
  });if(harmonizing)harmonizePart(original,part,i.voice,i,harmonyWarnings);root.append(part);const desc=instrumentPartDef(d,i,partId,idx+1);if(harmonizing){const title=i.name+' '+i.staffNo;one(desc,'part-name').textContent=title+' ('+(i.voice==='bass'?'baixo':'voz '+i.voice)+')';const ab=one(desc,'part-abbreviation');ab.textContent=i.abbr+' '+i.staffNo;const sinst=one(desc,'score-instrument');one(sinst,'instrument-name').textContent=title;}partList.append(desc);if(i.count>1&&i.staffNo===i.count){partList.append(makeGroupMarker(d,groupNumber,'stop',i.name));groupNumber++;}});
  if(!keepSource){original.remove();if(origScorePart)origScorePart.remove()}
- warnings.push(...harmonyWarnings);clearSourceLayout(d);setCompactScoreLayout(d,selected.length+1);
+ warnings.push(...harmonyWarnings);normalizeHarmonyRootDisplay(d);clearSourceLayout(d);setCompactScoreLayout(d,selected.length+1);
  root.setAttribute('version','4.0');let contents='<?xml version="1.0" encoding="utf-8"?>\n'+new XMLSerializer().serializeToString(d).replace(/^<\?xml[^>]*\?>\s*/,'');const blob=new Blob([contents],{type:'application/vnd.recordare.musicxml+xml;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=slug(baseName(sourceFilename))+'_grade_orquestral.musicxml';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);setStatus('Grade criada com '+selected.length+' pautas'+(harmonizing?' harmonizadas':' instrumentais')+(keepSource?' + melodia original':'')+'.\nArquivo gerado: '+a.download+'\nHastes das partes geradas: orientação automática.\nPaginação: automática, sem quebras herdadas; escala compacta A4.\nGrupos: chaves para instrumentos com múltiplas pautas.\n'+(warnings.length?'Atenção à extensão instrumental:\n'+warnings.join('\n')+'\n':'')+'Abra no MuseScore para verificar escrita, playback e paginação.',warnings.length?'warning':'success')
  }catch(e){setStatus('Não foi possível concluir: '+(e.message||String(e)),'error');console.error(e)}}
 el('generate').addEventListener('click',generate);
