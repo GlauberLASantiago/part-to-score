@@ -29,7 +29,7 @@ a{color:#3D5A80}a:hover{color:#293241}.credits{color:#293241;font-size:13px;marg
  </div>
  <aside class="stack">
   <section class="panel"><div class="panel-head"><span class="num">03</span><div><h2>Opções de geração</h2><p>Organização da grade</p></div></div>
-   <div class="options"><label><input type="checkbox" id="autoOct"> <span><b>Ajustar automaticamente a oitava</b> para tentar manter todas as notas na extensão do instrumento, sem saltos artificiais</span></label><label><input type="checkbox" id="keepSource" checked disabled> <span><b>Melodia original sempre na primeira parte</b> da grade, preservando suas cifras</span></label>
+   <div class="options"><label><input type="checkbox" id="repairMajorChords" checked> <span><b>Corrigir cifras maiores exportadas como “sem acorde”</b> — interpreta uma fundamental com tipo “none” e sem texto como acorde maior (ex.: G e C/G). Desmarque se isso representar ausência de acorde na origem.</span></label><label><input type="checkbox" id="autoOct"> <span><b>Ajustar automaticamente a oitava</b> para tentar manter todas as notas na extensão do instrumento, sem saltos artificiais</span></label><label><input type="checkbox" id="keepSource" checked disabled> <span><b>Melodia original sempre na primeira parte</b> da grade, preservando suas cifras</span></label>
     <label><input type="checkbox" id="copyLyrics" checked> <span>Copiar também a letra da melodia</span></label>
     <div class="optblock"><label for="chords">Cifras nas partes instrumentais</label><select id="chords"><option value="master">Apenas na parte original</option><option value="all">Copiar cifras transpostas em cada instrumento</option><option value="first">Apenas na primeira parte gerada</option></select></div>
    </div><div class="hint">Se a parte original for removida, as cifras serão preservadas na primeira parte gerada quando o modo “Apenas na parte original” estiver selecionado.</div>
@@ -118,6 +118,19 @@ function updateNote(note,semi,dia){const pitch=one(note,'pitch');if(!pitch)retur
 function transposeHarmony(h,semi,dia){for(const [field,stepTag,alterTag] of [['root','root-step','root-alter'],['bass','bass-step','bass-alter']]){const parent=one(h,field);if(!parent)continue;const step=txt(parent,stepTag);if(!step)continue;const result=transposeLetter(step,number(parent,alterTag),4,semi,dia);upsert(parent,stepTag,result.step);let old=one(parent,alterTag);if(result.alter!==0){if(old)old.textContent=String(result.alter);else one(parent,stepTag).after(own(h.ownerDocument,alterTag,result.alter))}else if(old)old.remove()}for(const f of kids(h,'frame'))f.remove();normalizeHarmonyDisplay(h)}
 // Mantém a apresentação sincronizada com as alturas MusicXML, inclusive no baixo.
 // Atributos text vazios podem ocultar letras; textos herdados podem ficar sem transposição.
+function repairMajorHarmonyKinds(doc){
+ let count=0;
+ for(const h of doc.querySelectorAll('harmony')){
+  const root=one(h,'root'),kind=one(h,'kind'),step=root?txt(root,'root-step'):null;
+  if(!kind||txt(h,'kind')!=='none'||!LETTERS.includes(step))continue;
+  // Textos explícitos (N.C., sem acorde etc.) e raízes ocultadas são intencionais.
+  if((kind.getAttribute('text')||'').trim())continue;
+  const rootStep=one(root,'root-step');
+  if(rootStep.getAttribute('text')!==null&&!rootStep.getAttribute('text').trim())continue;
+  kind.textContent='major';kind.setAttribute('text','');kind.setAttribute('use-symbols','no');count++;
+ }
+ return count;
+}
 function normalizeHarmonyDisplay(h){
  for(const [field,stepTag,alterTag] of [['root','root-step','root-alter'],['bass','bass-step','bass-alter']]){
   const parent=one(h,field),stepNode=parent?one(parent,stepTag):null;
@@ -253,7 +266,7 @@ function harmonizePart(sourcePart,targetPart,voice,inst,warningSet){
   const originalNotes=kids(srcMeasures[m],'note'),destNotes=kids(dstMeasures[m],'note'),sourceEvents=[...srcMeasures[m].children];
   let ni=0,prevTone=null;
   for(const child of sourceEvents){
-   if(child.localName==='harmony'){active=harmonyDefinition(child);continue} 
+   if(child.localName==='harmony'){active=harmonyDefinition(child);continue}
    if(child.localName!=='note')continue;
    const dst=destNotes[ni++],pitch=one(child,'pitch');if(!pitch)continue;
    if(one(child,'chord')){if(active&&prevTone)setPitchDirect(dst,prevTone);continue}
@@ -271,6 +284,7 @@ function harmonizePart(sourcePart,targetPart,voice,inst,warningSet){
 }
 function generate(){clearStatus();if(!xmlDoc||!sourceMeta){setStatus('Carregue um arquivo MusicXML válido.','error');return}const harmonizing=el('generationMode').value==='harm';const selected=instruments.filter(i=>document.querySelector(`[data-inst="${i.id}"]`).checked).flatMap(i=>{const count=harmonizing?Number(document.querySelector(`[data-count="${i.id}"]`).value):1,start=harmonizing?document.querySelector(`[data-voice="${i.id}"]`).value:'1',oct=Number(document.querySelector(`[data-oct="${i.id}"]`).value);return Array.from({length:count},(_,idx)=>({...i,oct,voice:start==='bass'?'bass':Number(start)+idx,staffNo:idx+1,count}));});if(!selected.length){setStatus('Selecione pelo menos um instrumento.','error');return}
  try{const warnings=[];if(harmonizing&&sourceMeta.har===0)throw Error('Para harmonizar, o MusicXML precisa conter cifras (<harmony>).');if(el('autoOct').checked){const range=soundingMidiRange();for(const i of selected){const choice=chooseAutoOct(i,range);i.oct=choice.oct;if(!choice.valid)warnings.push(i.name+': a melodia não cabe integralmente na extensão estimada, mesmo após mudança de oitava.');}}const d=xmlDoc.cloneNode(true),root=d.documentElement,partList=one(root,'part-list'),original=kids(root,'part')[0],origScorePart=kids(partList,'score-part')[0],copyLyrics=el('copyLyrics').checked,keepSource=true,chordMode=el('chords').value,srcTrans=sourceMeta.tr,sFifthOffset=fifthShift(srcTrans.semi,srcTrans.dia);
+ const repaired=el('repairMajorChords').checked?repairMajorHarmonyKinds(d):0;if(repaired)warnings.push(repaired+' cifras com fundamental e tipo none foram interpretadas como acordes maiores.');
  const harmonyWarnings=new Set();let groupNumber=1;selected.forEach((i,idx)=>{if(i.count>1&&i.staffNo===1)partList.append(makeGroupMarker(d,groupNumber,'start',i.name));let partId='ORQ'+(idx+1);while([...partList.querySelectorAll('score-part')].some(e=>e.getAttribute('id')===partId))partId+='X';const part=original.cloneNode(true);stripIDs(part);part.setAttribute('id',partId);const semi=srcTrans.semi+i.upSemi+12*i.oct,initialDia=srcTrans.dia+i.upDia+7*i.oct,chordSemi=srcTrans.semi+i.upSemi,chordDia=srcTrans.dia+i.upDia,targetOffset=fifthShift(i.upSemi,i.upDia);let currentKey=0;
  const measures=kids(part,'measure');measures.forEach((m,measureIndex)=>{let attrs=kids(m,'attributes');if(measureIndex===0&&attrs.length===0)attrs=[insertFirstAttrs(m,d)];for(const a of attrs){for(const k of kids(a,'key')){const val=txt(k,'fifths');if(val!==null)currentKey=Number(val);if(!Number.isInteger(currentKey))throw Error('Armadura de clave inválida.');const finalF=normalizedFifths(currentKey+sFifthOffset+targetOffset);upsert(k,'fifths',finalF)}if(measureIndex===0&&a===attrs[0]){prependClef(a,i);insertTranspose(a,i)}else{for(const c of kids(a,'clef'))c.remove();for(const t of kids(a,'transpose'))t.remove()}}
  // A transposição instrumental é declarada apenas no início da parte.
@@ -282,7 +296,7 @@ function generate(){clearStatus();if(!xmlDoc||!sourceMeta){setStatus('Carregue u
  });if(harmonizing)harmonizePart(original,part,i.voice,i,harmonyWarnings);root.append(part);const desc=instrumentPartDef(d,i,partId,idx+1);if(harmonizing){const title=i.name+' '+i.staffNo;one(desc,'part-name').textContent=title+' ('+(i.voice==='bass'?'baixo':'voz '+i.voice)+')';const ab=one(desc,'part-abbreviation');ab.textContent=i.abbr+' '+i.staffNo;const sinst=one(desc,'score-instrument');one(sinst,'instrument-name').textContent=title;}partList.append(desc);if(i.count>1&&i.staffNo===i.count){partList.append(makeGroupMarker(d,groupNumber,'stop',i.name));groupNumber++;}});
  if(!keepSource){original.remove();if(origScorePart)origScorePart.remove()}
  warnings.push(...harmonyWarnings);normalizeHarmonyRootDisplay(d);clearSourceLayout(d);setCompactScoreLayout(d,selected.length+1);
- root.setAttribute('version','4.0');let contents='<?xml version="1.0" encoding="utf-8"?>\n'+new XMLSerializer().serializeToString(d).replace(/^<\?xml[^>]*\?>\s*/,'');const blob=new Blob([contents],{type:'application/vnd.recordare.musicxml+xml;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=slug(baseName(sourceFilename))+'_grade_orquestral.musicxml';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);setStatus('Grade criada com '+selected.length+' pautas'+(harmonizing?' harmonizadas':' instrumentais')+(keepSource?' + melodia original':'')+'.\nArquivo gerado: '+a.download+'\nHastes das partes geradas: orientação automática.\nPaginação: automática, sem quebras herdadas; escala compacta A4.\nGrupos: chaves para instrumentos com múltiplas pautas.\n'+(warnings.length?'Atenção à extensão instrumental:\n'+warnings.join('\n')+'\n':'')+'Abra no MuseScore para verificar escrita, playback e paginação.',warnings.length?'warning':'success')
+ root.setAttribute('version','4.0');let contents='<?xml version="1.0" encoding="utf-8"?>\n'+new XMLSerializer().serializeToString(d).replace(/^<\?xml[^>]*\?>\s*/,'');const blob=new Blob([contents],{type:'application/vnd.recordare.musicxml+xml;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=slug(baseName(sourceFilename))+'_grade_orquestral.musicxml';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);setStatus('Grade criada com '+selected.length+' pautas'+(harmonizing?' harmonizadas':' instrumentais')+(keepSource?' + melodia original':'')+'.\nArquivo gerado: '+a.download+'\nHastes das partes geradas: orientação automática.\nPaginação: automática, sem quebras herdadas; escala compacta A4.\nGrupos: chaves para instrumentos com múltiplas pautas.\n'+(warnings.length?'Observações:\n'+warnings.join('\n')+'\n':'')+'Abra no MuseScore para verificar escrita, playback e paginação.',warnings.length?'warning':'success')
  }catch(e){setStatus('Não foi possível concluir: '+(e.message||String(e)),'error');console.error(e)}}
 el('generate').addEventListener('click',generate);
 </script>
