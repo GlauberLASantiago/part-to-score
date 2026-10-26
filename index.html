@@ -148,11 +148,25 @@ function harmonyDefinition(h){
  const kind=kindNode?.getAttribute('text')||txt(h,'kind')||'major';
  const k=String(txt(h,'kind')||'major').trim().toLowerCase();
  const templates={'major':[[0,0],[2,4],[4,7]],'minor':[[0,0],[2,3],[4,7]],'augmented':[[0,0],[2,4],[4,8]],'diminished':[[0,0],[2,3],[4,6]],'dominant':[[0,0],[2,4],[4,7],[6,10]],'major-seventh':[[0,0],[2,4],[4,7],[6,11]],'minor-seventh':[[0,0],[2,3],[4,7],[6,10]],'diminished-seventh':[[0,0],[2,3],[4,6],[6,9]],'half-diminished':[[0,0],[2,3],[4,6],[6,10]],'minor-major':[[0,0],[2,3],[4,7],[6,11]],'major-sixth':[[0,0],[2,4],[4,7],[5,9]],'minor-sixth':[[0,0],[2,3],[4,7],[5,9]],'suspended-fourth':[[0,0],[3,5],[4,7]],'suspended-second':[[0,0],[1,2],[4,7]],'power':[[0,0],[4,7]]};
- const template=templates[k];if(!template)throw Error('Cifra não suportada para harmonização: '+k+'. Utilize o modo de duplicação ou simplifique a cifra.');
+ // Para tipos MusicXML sem modelo explícito, use somente a tríade básica.
+ // Ex.: dominant-ninth -> maior; minor-ninth -> menor; half-diminished -> diminuta.
+ let template=templates[k],triadFallback=false;
+ if(!template){
+  triadFallback=true;
+  const symbol=String(kind||'').toLowerCase();
+  const isHalfDim=k.includes('half-diminished')||symbol.includes('ø');
+  const isDiminished=isHalfDim||k.includes('diminished')||symbol.includes('dim')||symbol.includes('°');
+  const isAugmented=k.includes('augmented')||symbol.includes('aug')||symbol.includes('+');
+  const isMinor=k.startsWith('minor')||k.startsWith('min-')||k.startsWith('moll')||(/^m(?!aj)/.test(symbol));
+  const isSuspended2=k.includes('suspended-second')||symbol.includes('sus2');
+  const isSuspended4=k.includes('suspended')||symbol.includes('sus');
+  template=isDiminished?templates['diminished']:isAugmented?templates['augmented']:isMinor?templates['minor']:isSuspended2?templates['suspended-second']:isSuspended4?templates['suspended-fourth']:templates['major'];
+ }
+
  const rootMidi=60+NAT[LETTERS.indexOf(step)]+alter;
  const tones=template.map(([diatonic,semi])=>{const n=transposeLetter(step,alter,4,semi,diatonic);return {...n,midi:rootMidi+semi}});
  // Adições/alterações explícitas de graus MusicXML.
- for(const degree of kids(h,'degree')){const val=number(degree,'degree-value'),dAlt=number(degree,'degree-alter'),typ=txt(degree,'degree-type');if(!val||!typ)continue;
+ for(const degree of (triadFallback?[]:kids(h,'degree'))){const val=number(degree,'degree-value'),dAlt=number(degree,'degree-alter'),typ=txt(degree,'degree-type');if(!val||!typ)continue;
   const diatonic=val-1,base=[0,2,4,5,7,9,11][diatonic%7]+12*Math.floor(diatonic/7),targetSemi=base+dAlt;
   const tone=transposeLetter(step,alter,4,targetSemi,diatonic),newTone={...tone,midi:rootMidi+targetSemi};
   const j=tones.findIndex(t=>((t.midi-rootMidi)%12+12)%12===((base)%12+12)%12);
